@@ -4,13 +4,7 @@ import Reader from './Reader.vue'
 
 let threadURL=ref(null)
 let apiURL='http://localhost:3000/thread'
-let threadData=ref({
-    type: "empty"
-})
-
-watchEffect(() => {
-    console.log('home',threadData.value);
-})
+let threadData=ref([])
 
 async function read() {
     // let threadID = threadURL.value.split('/')[5]

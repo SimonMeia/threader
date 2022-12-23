@@ -7,7 +7,7 @@ import bodyparser from 'body-parser'
 
 
 const app = express()
-
+const client = new Client(process.env.BEARER_TOKEN);
 
 app.use('/', function (req, res, next) {
     res.header("Access-Control-Allow-Origin", process.env.CORS_DOMAIN);
@@ -20,53 +20,39 @@ app.use(cors({
 app.use(express.json())
 
 app.get('/thread/:id', async (req, res, next) => {
-
-    const client = new Client(process.env.BEARER_TOKEN);
-
-    let response = []
-
     try {
-        const firstTweet = await client.tweets.findTweetById(req.params.id, {
-            "tweet.fields": [
-                "author_id",
-                "conversation_id",
-                "created_at",
-                "text"
-            ]
-        });
+        let response = []
+        let isAReply = true
+        let idToFetch = req.params.id.toString()
+        do {
+            const tweet = await client.tweets.findTweetById(idToFetch, {
+                "tweet.fields": [
+                    "author_id",
+                    "created_at",
+                    "text",
+                    'referenced_tweets',
+                ],
+                "expansions": [
+                    "attachments.media_keys"
+                ],
+                "media.fields": [
+                    "type",
+                    "url"
+                ]
+            });
 
-        if (firstTweet != undefined) {
-            let today = new Date()
-            let tweetDate = new Date(firstTweet.data.created_at)
-            let diff = today.getTime() - tweetDate.getTime();
-            let daydiff = diff / (1000 * 60 * 60 * 24);
+            response.push(tweet)
 
-            if (daydiff > 7) {
-                res.send({
-                    type: 'error',
-                    message : 'too_old'
-                })
+            if (!tweet.data.referenced_tweets) {
+                isAReply = false
             } else {
-                response.push({
-                    text: firstTweet.data.text,
-                    id: firstTweet.data.id
-                })
-
-                const thread = await client.tweets.tweetsRecentSearch({
-                    "query": `to:${firstTweet.data.author_id} from:${firstTweet.data.author_id} conversation_id:${firstTweet.data.conversation_id}`,
-                });
-                for (let i = thread.data.length - 1; i >= 0; i--) {
-                    response.push({
-                        text: thread.data[i].text,
-                        id: thread.data[i].id
-                    })
-                }
-                res.send({
-                    type: 'success',
-                    data: response
-                })
+                idToFetch = tweet.data.referenced_tweets.filter(reference => reference.type == 'replied_to')[0].id
             }
-        }
+        } while (isAReply);
+
+
+
+        res.send(response.reverse())
     } catch (error) {
         next(error)
     }
@@ -79,6 +65,8 @@ app.use(function (req, res, next) {
 
 // error handler
 app.use(function (err, req, res, next) {
+    console.log(`Error : ${err.status} - ${err.message}`);
+
     // set locals, only providing error in development
     res.locals.message = err.message;
     res.locals.error = req.app.get("env") === "development" ? err : {};
